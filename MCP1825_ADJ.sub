@@ -1,0 +1,37 @@
+* ------------------------------------------------------------
+* MCP1825 Adjustable LDO (behavioral macro-model)   Rev: 0.3
+* Pins: 1=SHDN  2=VIN  3=GND  4=VOUT  5=ADJ
+* ------------------------------------------------------------
+.subckt MCP1825_ADJ SHDN VIN GND VOUT ADJ
+
+.param VREF=0.41          ; ADJ reference (V)
+.param VDROPOUT=0.21      ; dropout @ heavy load (V)
+.param IQ=120u            ; quiescent current when ON (A)
+.param ISHDN=0.1u         ; shutdown current (A)
+.param ILIM=0.6           ; current limit (A)
+.param ROUT=0.05          ; small output resistance (ohm)
+.param TSS=100u           ; soft-start time constant (s)
+.param VUVLO=2.0          ; UVLO rising threshold (V)
+.param VSHDNTH=0.30       ; SHDN high threshold as fraction of VIN
+
+* --- Enable logic: ON when SHDN high and VIN above UVLO
+B_en n_en 0 V = { if( V(VIN) > {VUVLO}, if( V(SHDN) > {VSHDNTH}*V(VIN), 1, 0 ), 0 ) }
+
+* --- Soft-start for internal reference (~100 µs default)
+Rss  n_en nss 1k
+Css  nss  0   { TSS/1k }
+Bvref vref 0 V = { {VREF} * V(nss) }
+
+* --- Error control driving a headroom-limited command node
+Bcmd ncmd 0 V = { if( V(n_en) > 0.5, min( V(VIN) - {VDROPOUT}, V(VOUT) + 1000*( V(vref) - V(ADJ) ) ), V(VOUT) ) }
+
+* --- Pass path: current from VIN->VOUT only, limited to ILIM
+Gpass VIN VOUT value = { max( 0, min( {ILIM}, ( V(ncmd) - V(VOUT) ) / {ROUT} ) ) }
+
+* --- Quiescent/Shutdown currents drawn from VIN to GND
+Giq VIN GND value = { {IQ}*V(n_en) + {ISHDN}*( 1 - V(n_en) ) }
+
+* --- Bleed so VOUT falls when disabled
+Rbleed VOUT GND 200k
+
+.ends MCP1825_ADJ
